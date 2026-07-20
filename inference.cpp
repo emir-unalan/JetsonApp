@@ -53,20 +53,34 @@ void Engine::modelInitialize(const std::string& enginePath, const std::string& o
         auto network = builder->createNetworkV2(0);
         auto config = builder->createBuilderConfig();
         config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, 1ULL << 30);
+
         auto parser = nvonnxparser::createParser(*network, logger);
 
         if(!parser->parseFromFile(onnxPath.c_str(), static_cast<int>(nvinfer1::ILogger::Severity::kWARNING))){
             std::cerr<<"ONNX Parse has failed."<<std::endl;
         }
 
-        engine = builder->buildEngineWithConfig(*network, *config);
+        network->getInput(0)->setType(nvinfer1::DataType::kHALF);
+        network->getOutput(0)->setType(nvinfer1::DataType::kHALF);
+
+        if (builder->platformHasFastFp16()) {
+            config->setFlag(nvinfer1::BuilderFlag::kFP16);
+            config->setFlag(nvinfer1::BuilderFlag::kDIRECT_IO); // binding noktalarinda gizli reformat/cast katmani eklenmesini engeller
+            std::cout << "FP16 mod etkinlestirildi (I/O dahil)." << std::endl;
+        }
+
+	    nvinfer1::IHostMemory* serialized = builder->buildSerializedNetwork(*network, *config);
+	    if(!serialized) std::cerr<<"Engine dosyası oluşturulamadı."<<std::endl;
+
+	    runtime = nvinfer1::createInferRuntime(logger);
+        engine = runtime->deserializeCudaEngine(serialized->data(), serialized->size());
         context = engine->createExecutionContext();
-        auto serialized = engine->serialize();
 
         std::ofstream e_file(enginePath, std::ios::binary);
         e_file.write(reinterpret_cast<const char*>(serialized->data()), serialized->size());
         e_file.close();
 
+	    delete(serialized);
         delete(parser);
         delete(network);
         delete(config);
@@ -80,6 +94,7 @@ void Engine::allocateBuffers(){
     //Bu adımda bellekten gerekli boyutlarda yer alıp tensorlara tahsis edeceğim
     auto inputDims = engine->getTensorShape("images");
     auto outputDims = engine->getTensorShape("output0");
+
     numAnchors = outputDims.d[2];
     numAttr = outputDims.d[1];
 
@@ -89,7 +104,7 @@ void Engine::allocateBuffers(){
     inputBytes = sizeof(uint16_t);
     for(int i = 0; i<inputDims.nbDims; i++) inputBytes *= inputDims.d[i];
     inputSize = inputBytes / sizeof(uint16_t);
-    
+
     outputBytes = sizeof(uint16_t);
     for(int i = 0; i<outputDims.nbDims; i++) outputBytes *= outputDims.d[i];
     outputSize = outputBytes / sizeof(uint16_t);
@@ -102,6 +117,8 @@ void Engine::allocateBuffers(){
 
     context->setTensorAddress("images", inputDevice);
     context->setTensorAddress("output0", outputDevice);
+
+
 
 }
 

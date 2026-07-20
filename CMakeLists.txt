@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
 
-set(CMAKE_CUDA_FLAGS "-allow-unsupported-compiler")
 project(jetsonApp LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -8,7 +7,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(TENSORRT_ROOT "/usr/local/tensorrt")
 
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 4.13 REQUIRED PATHS /usr/local)
 find_package(CUDAToolkit REQUIRED)
 
 link_directories(${TENSORRT_ROOT}/lib)

@@ -7,6 +7,9 @@
 
 int main() {
 
+    bool saveFrames = false;
+    bool showFrames = true;
+
     cudaEvent_t evStart, evPreEnd, evInferEnd, evPostEnd;
     cudaEventCreate(&evStart);
     cudaEventCreate(&evPreEnd);
@@ -25,17 +28,18 @@ int main() {
 
     Engine engine("../models/best.engine", "../models/yolo11s.onnx");
 
-    cv::VideoCapture cap("../video720p.mp4");
+    cv::VideoCapture cap("../video.mkv");
     if(!cap.isOpened()) {
         std::cerr<<"Hata: Video açılamadı. "<<std::endl;
         return 0;
     }
 
     cv::Mat frame;
+    int cnt=0;
     while (true) {
         cap >> frame;
         if(frame.empty()) break;
-
+        cnt++;
         //İşlemlerin farklı şekillerde nasıl daha optimize çalışabileceğini ölçmek adına cudaEvent fonksiyonları kullanıldı.
         cudaEventRecord(evStart, engine.getStream());
 
@@ -74,6 +78,8 @@ int main() {
         std::string fpsText = "FPS: " + std::to_string(static_cast<int>(1000.0/avgTotal));
         cv::putText(frame, fpsText, cv::Point(20, 40), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0,0, 255), 2);
         cv::imshow("JetsonApp", frame);
+        std::string outputFile = "file" +  std::to_string(cnt) + ".jpg";
+//        cv::imwrite(outputFile, frame);
 
         if(cv::waitKey(1) == 27) break;
 
