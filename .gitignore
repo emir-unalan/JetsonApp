@@ -4,6 +4,7 @@ bin/
 out/
 obj/
 cmake-build-*/
+dist/
 
 # Compiled object files
 *.o

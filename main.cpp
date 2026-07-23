@@ -1,14 +1,32 @@
 #include <iostream>
+#include <filesystem>
+#include <climits>
+#include <unistd.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/cuda.hpp>
 #include "inference.hpp"
 
+static std::filesystem::path getExecutableDir() {
+	char buf[PATH_MAX];
+	ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) -1);
+	if(len == -1) {
+		std::cerr<<"Mevcut çalışma dizini kullanılacak." <<std::endl;
+		return std::filesystem::current_path();
+	}
+	buf[len] = '\0';
+	return std::filesystem::path(buf).parent_path();
+}
 
 
 int main() {
 
-    bool saveFrames = false;
-    bool showFrames = true;
+    const std::filesystem::path exeDir = getExecutableDir();
+    const std::string enginePath = (exeDir / "models" / "model.engine").string();
+    const std::string onnxPath = (exeDir / "models" / "model.onnx").string();
+    const std::string videoPath = (exeDir / "video.mkv").string();
+    const std::filesystem::path outputDir = exeDir / "output";
+    bool saveFrames = true;
+    bool showFrames = false;
 
     cudaEvent_t evStart, evPreEnd, evInferEnd, evPostEnd;
     cudaEventCreate(&evStart);
@@ -26,9 +44,9 @@ int main() {
         return -1;
     }
 
-    Engine engine("../models/best.engine", "../models/yolo11s.onnx");
+    Engine engine(enginePath, onnxPath);
 
-    cv::VideoCapture cap("../video.mkv");
+    cv::VideoCapture cap(videoPath);
     if(!cap.isOpened()) {
         std::cerr<<"Hata: Video açılamadı. "<<std::endl;
         return 0;
@@ -77,11 +95,16 @@ int main() {
 
         std::string fpsText = "FPS: " + std::to_string(static_cast<int>(1000.0/avgTotal));
         cv::putText(frame, fpsText, cv::Point(20, 40), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0,0, 255), 2);
-        cv::imshow("JetsonApp", frame);
-        std::string outputFile = "file" +  std::to_string(cnt) + ".jpg";
-//        cv::imwrite(outputFile, frame);
 
-        if(cv::waitKey(1) == 27) break;
+        if (saveFrames) {
+            std::string outputFile = (outputDir / ("file" + std::to_string(cnt) + ".jpg")).string();
+            cv::imwrite(outputFile, frame);
+        }
+
+        if (showFrames) {
+            cv::imshow("JetsonApp", frame);
+            if(cv::waitKey(1) == 27) break;
+        }
 
         //Hangi işlemin ne kadar sürdüğünü görüntülemek için konsola bastırıyorum, bu sayede Infer işleminin çalışıp çalışmadığını ve optimize etmem gerekirse hangi kısımları etmeliyim bunu anlayacağım.
         if (frameCount % 60 == 0) {
