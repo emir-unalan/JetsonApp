@@ -17,6 +17,17 @@ static std::filesystem::path getExecutableDir() {
 	return std::filesystem::path(buf).parent_path();
 }
 
+static std::string getCameraPipeline(int sensorId = 0) {
+    return "nvarguscamerasrc sensor-id=" + std::to_string(sensorId) + " ! "
+           "video/x-raw(memory:NVMM), width=3280, height=2464, framerate=21/1 ! "
+           "nvvidconv ! "
+           "video/x-raw(memory:NVMM), width=1920, height=1080 ! "
+           "nvvidconv ! "
+           "video/x-raw, format=BGRx ! "
+           "videoconvert ! "
+           "video/x-raw, format=BGR ! "
+           "appsink drop=true max-buffers=1";
+}
 
 int main() {
 
@@ -25,8 +36,9 @@ int main() {
     const std::string onnxPath = (exeDir / "models" / "model.onnx").string();
     const std::string videoPath = (exeDir / "video.mkv").string();
     const std::filesystem::path outputDir = exeDir / "output";
-    bool saveFrames = true;
-    bool showFrames = false;
+    bool saveFrames = false;
+    bool showFrames = true;
+    bool useCam = true;
 
     cudaEvent_t evStart, evPreEnd, evInferEnd, evPostEnd;
     cudaEventCreate(&evStart);
@@ -45,8 +57,14 @@ int main() {
     }
 
     Engine engine(enginePath, onnxPath);
+    cv::VideoCapture cap;
+    if(useCam) {
+        cap.open(getCameraPipeline(), cv::CAP_GSTREAMER);
+    }
+    else {
+        cap.open(videoPath);
+    }
 
-    cv::VideoCapture cap(videoPath);
     if(!cap.isOpened()) {
         std::cerr<<"Hata: Video açılamadı. "<<std::endl;
         return 0;
@@ -56,7 +74,7 @@ int main() {
     int cnt=0;
     while (true) {
         cap >> frame;
-        if(frame.empty()) break;
+        // if(frame.empty()) break;
         cnt++;
         //İşlemlerin farklı şekillerde nasıl daha optimize çalışabileceğini ölçmek adına cudaEvent fonksiyonları kullanıldı.
         cudaEventRecord(evStart, engine.getStream());
