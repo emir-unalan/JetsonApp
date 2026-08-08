@@ -17,4 +17,14 @@ target_include_directories(jetsonApp PRIVATE
     ${CUDAToolkit_INCLUDE_DIRS}
 )
 
-target_link_libraries(jetsonApp ${OpenCV_LIBS} nvinfer nvinfer_plugin nvonnxparser cudart)
+include(FetchContent)
+FetchContent_Declare(
+        jetsonApp
+        QUIET
+        GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+        GIT_TAG v2.7.2
+)
+
+FetchContent_MakeAvailable(jetsonApp)
+
+target_link_libraries(jetsonApp ${OpenCV_LIBS} nvinfer nvinfer_plugin nvonnxparser cudart CLI11::CLI11)

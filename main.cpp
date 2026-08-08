@@ -5,6 +5,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/cuda.hpp>
 #include "inference.hpp"
+#include <CLI/CLI.hpp>
 
 static std::filesystem::path getExecutableDir() {
 	char buf[PATH_MAX];
@@ -29,16 +30,30 @@ static std::string getCameraPipeline(int sensorId = 0) {
            "appsink drop=true max-buffers=1";
 }
 
-int main() {
+int main(int argc, char** argv) {
+
+    CLI::App app;
 
     const std::filesystem::path exeDir = getExecutableDir();
-    const std::string enginePath = (exeDir / "models" / "model.engine").string();
-    const std::string onnxPath = (exeDir / "models" / "model.onnx").string();
-    const std::string videoPath = (exeDir / "video.mkv").string();
+
+    std::string enginePath = (exeDir / "models" / "model.engine").string();
+    std::string onnxPath = (exeDir / "models" / "model.onnx").string();
+    std::string videoPath = (exeDir / "video.mkv").string();
     const std::filesystem::path outputDir = exeDir / "output";
-    bool saveFrames = false;
-    bool showFrames = true;
-    bool useCam = true;
+
+    bool saveFrames = true;
+    bool showFrames = false;
+    bool useCam = false;
+    bool verbose = false;
+
+    app.add_flag("--show", showFrames, "Show frames (don't use if you using the CLI session)");
+    app.add_flag("--save", saveFrames, "Save frames to output/ folder.");
+    app.add_flag("-c, --cam", useCam, "Use the camera for source.");
+    app.add_option("-s, --source", videoPath, "The directory of video source.");
+    app.add_option("-o, --onnx", onnxPath, "ONNX model path.");
+    app.add_option("-e, --engine", enginePath, "TensorRT engine model path.");
+    app.add_flag("-v, --verbose", verbose, "Detailed logging.");
+    CLI11_PARSE(app, argc, argv);
 
     cudaEvent_t evStart, evPreEnd, evInferEnd, evPostEnd;
     cudaEventCreate(&evStart);
@@ -58,12 +73,8 @@ int main() {
 
     Engine engine(enginePath, onnxPath);
     cv::VideoCapture cap;
-    if(useCam) {
-        cap.open(getCameraPipeline(), cv::CAP_GSTREAMER);
-    }
-    else {
-        cap.open(videoPath);
-    }
+    if(useCam) cap.open(getCameraPipeline(), cv::CAP_GSTREAMER);
+    else cap.open(videoPath);
 
     if(!cap.isOpened()) {
         std::cerr<<"Hata: Video açılamadı. "<<std::endl;
@@ -125,7 +136,7 @@ int main() {
         }
 
         //Hangi işlemin ne kadar sürdüğünü görüntülemek için konsola bastırıyorum, bu sayede Infer işleminin çalışıp çalışmadığını ve optimize etmem gerekirse hangi kısımları etmeliyim bunu anlayacağım.
-        if (frameCount % 60 == 0) {
+        if (verbose && frameCount % 60 == 0) {
             std::cout << "=== Frame " << frameCount << " ===\n"
                       << "  Preprocess : " << avgPre   << " ms\n"
                       << "  Infer      : " << avgInfer << " ms\n"
@@ -135,8 +146,8 @@ int main() {
         }
     }
 
-    cap.release();
-    cv::destroyAllWindows();
+    if (useCam) cap.release();
+    if (showFrames) cv::destroyAllWindows();
     cudaEventDestroy(evStart);
     cudaEventDestroy(evPreEnd);
     cudaEventDestroy(evInferEnd);

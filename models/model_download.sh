@@ -21,7 +21,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 echo "Model export ediliyor..."
-yolo export model=yolo11s.pt format=onnx half=True
+yolo export model=yolo11l.pt format=onnx quantize=16
 
 deactivate
 
