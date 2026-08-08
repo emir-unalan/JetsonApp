@@ -25,6 +25,7 @@ Farklı Jetson kartlarında da çalışması beklenmektedir. Ancak TensorRT Engi
 | OpenCV | **4.13.0 (CUDA Build)** |
 | CMake | 3.16 veya üzeri |
 | GCC | JetPack varsayılan GCC |
+| CLI11 | CMake `FetchContent` ile otomatik indirilir (ayrı kurulum gerekmez) |
 
 ---
 
@@ -221,19 +222,87 @@ GStreamer: YES
 NVIDIA CUDA: YES
 ```
 
+---
+
+# JetsonApp'ın Derlenmesi
+
+OpenCV kurulumu tamamlandıktan sonra proje kendi CMake yapılandırmasıyla derlenir. CLI11 kütüphanesi `FetchContent` ile otomatik indirildiği için önceden kurulum yapmanız gerekmez (internet bağlantısı gerekir).
+
+```bash
+mkdir -p build && cd build
+
+cmake ..
+
+make -j4
+```
+
+Derleme sonunda çalıştırılabilir dosya `build/jetsonApp` altında oluşur.
+
+---
+
+# Kullanım
+
+JetsonApp, komut satırı argümanlarını **CLI11** kütüphanesi ile ayrıştırır. Belirtilmeyen argümanlar için varsayılan değerler, çalıştırılabilir dosyanın bulunduğu dizine göre otomatik belirlenir.
+
+```bash
+./jetsonApp [seçenekler]
+```
+
+### Argümanlar
+
+| Flag | Açıklama | Varsayılan |
+|---|---|---|
+| `-e, --engine <path>` | TensorRT engine dosyasının yolu | `<exe_dizini>/models/model.engine` |
+| `-o, --onnx <path>` | ONNX model dosyasının yolu | `<exe_dizini>/models/model.onnx` |
+| `-s, --source <path>` | Video kaynağı dosya yolu | `<exe_dizini>/video.mkv` |
+| `-c, --cam` | Video dosyası yerine kamerayı kaynak olarak kullanır (`nvarguscamerasrc` tabanlı GStreamer pipeline'ı) | kapalı |
+| `--save` | İşlenmiş kareleri `output/` klasörüne JPEG olarak kaydeder | açık |
+| `--show` | Kareleri bir pencerede canlı gösterir (SSH/headless CLI oturumunda kullanmayın) | kapalı |
+| `-v, --verbose` | Her 60 karede bir preprocess/infer/postprocess sürelerini ve FPS'i konsola yazdırır | kapalı |
+
+> Engine dosyası bulunamazsa, program ONNX dosyasından yeni bir engine oluşturur. Bu işlem yalnızca ilk çalıştırmada veya model değiştiğinde birkaç dakika sürer.
+
+### Örnekler
+
+Varsayılan ayarlarla (repodaki `video.mkv` üzerinden, kareleri kaydederek) çalıştırma:
+
+```bash
+./jetsonApp
+```
+
+Özel bir video dosyası ve model ile, detaylı loglama açık:
+
+```bash
+./jetsonApp -s /path/to/video.mp4 -e models/custom.engine -o models/custom.onnx -v
+```
+
+Jetson kamerasını canlı kaynak olarak kullanıp ekranda gösterme (yalnızca masaüstü/monitör bağlıyken):
+
+```bash
+./jetsonApp --cam --show
+```
+
+Kare kaydetmeden, sadece performans ölçümü için:
+
+```bash
+./jetsonApp --cam -v
+```
+
+---
+
 # Kaynak Kod Yapısı
 
 JetsonApp modüler bir mimari ile geliştirilmiştir. Her dosya belirli bir sorumluluğa sahiptir.
 
 | Dosya | Açıklama |
 |--------|----------|
-| `main.cpp` | Uygulamanın giriş noktasıdır. Model yükleme, video okuma ve inference döngüsünü yönetir. |
-| `Engine.cpp` | TensorRT Engine oluşturma, yükleme ve inference işlemlerini gerçekleştirir. |
-| `Engine.h` | Engine sınıfının tanımları bulunur. |
-| `preprocess.cu` | CUDA tabanlı preprocessing kernel'larını içerir. |
-| `preprocess.h` | Preprocessing fonksiyonlarının tanımları. |
+| `main.cpp` | Uygulamanın giriş noktasıdır. CLI11 ile argüman ayrıştırma, model yükleme, video/kamera okuma ve inference döngüsünü yönetir. |
+| `inference.cpp` | TensorRT Engine oluşturma, yükleme ve inference işlemlerini gerçekleştirir. |
+| `inference.hpp` | `Engine` sınıfının tanımları bulunur. |
+| `preprocess.cu` | CUDA tabanlı preprocessing kernel'larını içerir (resize + BGR→RGB + normalize + HWC→CHW, tek geçişte). |
+| `preprocess.cuh` | Preprocessing fonksiyonlarının tanımları. |
 | `postprocess.cu` | CUDA tabanlı decode ve postprocessing işlemleri. |
-| `postprocess.h` | Postprocessing fonksiyonlarının tanımları. |
+| `postprocess.cuh` | Postprocessing fonksiyonlarının tanımları. |
 
 Bu yapı sayesinde proje kolayca genişletilebilir ve farklı modeller için uyarlanabilir.
 
@@ -296,7 +365,7 @@ JetsonApp TensorRT tarafından desteklenen ONNX modelleri ile çalışmaktadır.
 
 ve benzeri ONNX formatına dönüştürülebilen modeller kullanılabilir.
 
-Model değiştirildiğinde mevcut `.engine` dosyası silinmeli ve uygulama yeniden çalıştırılmalıdır. Böylece TensorRT yeni modele uygun engine dosyasını yeniden oluşturacaktır.
+Model değiştirildiğinde mevcut `.engine` dosyası silinmeli ve uygulama yeniden çalıştırılmalıdır (veya `--engine`/`--onnx` argümanlarıyla farklı bir dosya çifti belirtilmelidir). Böylece TensorRT yeni modele uygun engine dosyasını yeniden oluşturacaktır.
 
 ---
 
@@ -342,6 +411,12 @@ Her çalıştırmada yeniden engine oluşturmak uygulamanın başlangıç süres
 
 ---
 
+## Gereksiz Kare Kaydını Kapatın
+
+`--save` varsayılan olarak açıktır ve her kareyi diske JPEG olarak yazar. Sadece canlı izleme veya performans testi yapıyorsanız `--save` bayrağını kullanmayarak (kodda varsayılanı değiştirerek) disk I/O yükünü azaltabilirsiniz.
+
+---
+
 # Sık Karşılaşılan Sorunlar
 
 ## OpenCV Bulunamıyor
@@ -379,6 +454,37 @@ Hata mesajını inceleyerek eklemeniz gereken bir CMAKE configrasyonu var mı ko
 
 ---
 
+## CLI11 İndirilemiyor
+
+Hata:
+
+```text
+Failed to download content of 'CLI11'
+```
+
+Çözüm:
+
+- Cihazın internet bağlantısını kontrol edin (CLI11, CMake `FetchContent` ile GitHub üzerinden indirilir).
+- Offline ortamda çalışıyorsanız CLI11'i önceden indirip `third_party/CLI11` altına yerleştirip CMakeLists.txt'te `add_subdirectory` ile eklemeyi değerlendirin.
+
+---
+
+## Video/Kamera Açılamıyor
+
+Hata:
+
+```text
+Hata: Video açılamadı.
+```
+
+Çözüm:
+
+- `-s/--source` ile verilen video dosyasının yolunun doğru olduğunu kontrol edin.
+- `-c/--cam` kullanıyorsanız, `nvarguscamerasrc` pipeline'ının cihazınızdaki kamera sensörüyle (çözünürlük/framerate) uyumlu olduğunu doğrulayın.
+- GStreamer desteğinin OpenCV derlemesinde etkin olduğunu (`WITH_GSTREAMER=ON`) doğrulayın.
+
+---
+
 ## Engine Oluşturulamıyor
 
 Olası nedenler:
@@ -400,6 +506,7 @@ Aşağıdaki maddeleri kontrol edin.
 - OpenCV CUDA desteği ile derlendi mi?
 - FP16 Engine kullanılıyor mu?
 - Kamera çözünürlüğü gereğinden yüksek mi?
+- `-v/--verbose` ile preprocess/infer/postprocess sürelerini karşılaştırarak darboğazın hangi aşamada olduğunu tespit edin.
 
 ---
 
@@ -448,5 +555,4 @@ Bu proje aşağıdaki açık kaynak teknolojilerden yararlanmaktadır.
 - OpenCV
 - CMake
 - ONNX
-
-Bu projelerin geliştiricilerine katkılarından dolayı teşekkür ederiz.
+- CLI11
